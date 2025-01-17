@@ -162,7 +162,7 @@ class SecretVaultSubmitter:
                 By.CSS_SELECTOR,
                 'div.self-end'  # 'Finalize' button
             )
-            #
+
             if not success:
                 logger.error("Failed to verify successful secret submission")
                 return False
@@ -174,8 +174,75 @@ class SecretVaultSubmitter:
             logger.error(f"Failed to submit secret: {str(e)}")
             return False
 
+    def restore_secret(self, secret: SecretSubmission) -> bool:
+        """Restores a secret through the web interface."""
+        try:
+            # Navigate to secrets page
+            self.driver.get(f"{self.base_url}/secrets")
+            # Wait for a star icon to ensure page was loaded
+            star_icon = self._wait_for_element(By.CSS_SELECTOR, "svg.lucide-star")
+            if not star_icon:
+                logger.error("Fail to load secrets page ")
+                return False
 
-def main(stage):
+            # Find the secret card with the matching name
+            secret_card = self._wait_for_element(
+                By.XPATH,
+                f"//div[h3[normalize-space(text())='{secret.name}']]"
+            )
+
+            # Page always loads in english
+            recover_button = secret_card.find_element(
+                By.XPATH,
+                f"//div/button[normalize-space(text())='Recover']"
+            )
+
+            if not recover_button:
+                logger.error(f"Could not find 'Recover' button for secret: {secret.name}")
+                return False
+            # Click the "Recover" button
+            recover_button.click()
+            # Find the keepic input field
+            keepic_input = self._wait_for_element(By.ID, 'fileInput')
+            if not keepic_input:
+                logger.error(f"Could not find keepic input field in the modal: {secret.name}")
+                return False
+            # Upload keepic file
+            keepic_path = Path(secret.keepic_path)
+            if not keepic_path.exists():
+                logger.error(f"Keepic file not found: {secret.keepic_path}")
+                return False
+            keepic_input.send_keys(str(keepic_path.absolute()))
+
+            # Submit the form
+            buttons_div = self._wait_for_element(
+                By.CSS_SELECTOR,
+                "div.justify-end"
+            )
+
+            submit_button = buttons_div.find_element(
+                By.XPATH,
+                "//button[normalize-space()='Recover']"
+            )
+            if not submit_button:
+                return False
+            submit_button.click()
+            # self.driver.execute_script("arguments[0].click();", submit_button)
+
+            # Wait for the recovery process to finish
+            # Wait for success message
+            success = self._wait_for_element(
+                By.CSS_SELECTOR,
+                'i.fa-check-circle'  # success icon
+            )
+            logger.info(f"Successfully restored secret: {secret.name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to restore secret: {str(e)}")
+            return False
+
+
+def main(stage: str):
     # Example secret submission
     secret = SecretSubmission(
         name="Test Secret",
@@ -193,6 +260,12 @@ def main(stage):
 
         # Submit the secret
         if submitter.submit_secret(secret):
+            logger.info("Secret submitted successfully")
+        else:
+            logger.error("Failed to submit secret")
+
+        # Recover the secret
+        if submitter.restore_secret(secret):
             logger.info("Secret submitted successfully")
         else:
             logger.error("Failed to submit secret")
